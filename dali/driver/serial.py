@@ -29,7 +29,7 @@ from operator import xor
 from typing import Any, Callable, Generator, NamedTuple, Optional
 from urllib.parse import ParseResult, urlparse, urlunparse
 
-import serial_asyncio
+import serialx
 
 import dali.gear
 from dali import command, frame, gear, sequences
@@ -1016,7 +1016,7 @@ class DriverLubaRs232(DriverSerialBase):
 
         self.serial_path = self.uri.path
         _LOG.info(f"Initialising luba232 driver for '{self.serial_path}'")
-        self._transport: Optional[serial_asyncio.SerialTransport] = None
+        self._transport: Optional[serialx.SerialTransport] = None
         self._protocol: Optional[DriverLubaRs232.LubaProtocol] = None
 
     async def connect(self, *, scan_dev_inst: bool = False) -> None:
@@ -1030,7 +1030,7 @@ class DriverLubaRs232(DriverSerialBase):
         (
             self._transport,
             self._protocol,
-        ) = await serial_asyncio.create_serial_connection(
+        ) = await serialx.create_serial_connection(
             loop=asyncio.get_event_loop(),
             protocol_factory=DriverLubaRs232.LubaProtocol,
             url=self.serial_path,
@@ -1603,7 +1603,7 @@ class DriverSCIRS232(DriverSerialBase):
 
         self.serial_path = self.uri.path
         _LOG.info(f"Initialising SCI RS232 driver for '{self.serial_path}'")
-        self._transport: Optional[serial_asyncio.SerialTransport] = None
+        self._transport: Optional[serialx.SerialTransport] = None
         self._protocol: Optional[DriverSCIRS232.SCIRS232Protocol] = None
 
     async def connect(self, *, scan_dev_inst: bool = False) -> None:
@@ -1621,7 +1621,7 @@ class DriverSCIRS232(DriverSerialBase):
         (
             self._transport,
             self._protocol,
-        ) = await serial_asyncio.create_serial_connection(
+        ) = await serialx.create_serial_connection(
             loop=asyncio.get_event_loop(),
             protocol_factory=DriverSCIRS232.SCIRS232Protocol,
             url=self.serial_path,
