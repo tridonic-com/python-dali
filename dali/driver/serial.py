@@ -301,6 +301,7 @@ class DriverLubaRs232(DriverSerialBase):
     timeout_rx = 0.025
     timeout_tx_confirm = 1.0  # TX might take some time if the bus is busy
     timeout_connect = 1.0
+    timeout_bus_power = 5.0  # Time for the integrated PS to bring the bus up
 
     class LubaCmd(Enum):
         """
@@ -1220,6 +1221,12 @@ class DriverLubaRs232(DriverSerialBase):
 
         self._connected.set()
 
+        # After switching on the integrated power supply the bus voltage takes
+        # a moment to rise; sending DALI frames before then fails, so wait for
+        # the bus to be powered before scanning.
+        if self.bus_power:
+            await self._wait_for_bus_power()
+
         # Scan the bus for control devices, and create a mapping of addresses
         # to instance types
         if scan_dev_inst:
@@ -1229,6 +1236,17 @@ class DriverLubaRs232(DriverSerialBase):
                 f"Found {len(self.dev_inst_map.mapping)} enabled control "
                 "device instances"
             )
+
+    async def _wait_for_bus_power(self) -> None:
+        """Wait for the integrated power supply to bring up the bus voltage."""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + DriverLubaRs232.timeout_bus_power
+        while loop.time() < deadline:
+            status = await self._protocol.send_read_status()
+            if status is not None and not status.bus_voltage_error:
+                return
+            await asyncio.sleep(0.1)
+        _LOG.warning("DALI bus voltage not detected after enabling bus power")
 
     async def query_device_descriptor(
         self,
