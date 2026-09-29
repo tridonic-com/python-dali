@@ -997,7 +997,7 @@ class DriverLubaRs232(DriverSerialBase):
 
         def connection_lost(self, exc):
             _LOG.info("Serial port closed")
-            self.transport.loop.stop()
+            self._connected.clear()
 
         @property
         def connected(self) -> asyncio.Event:
@@ -1583,7 +1583,7 @@ class DriverSCIRS232(DriverSerialBase):
 
         def connection_lost(self, exc):
             _LOG.info("Serial port closed")
-            self.transport.loop.stop()
+            self._connected.clear()
 
         @property
         def connected(self) -> asyncio.Event:
