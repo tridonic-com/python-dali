@@ -315,6 +315,8 @@ class DriverLubaRs232(DriverSerialBase):
         READ_STATUS_RSP = 0x2D
         QUERY_DEVICE_INFO_CMD = 0x20
         QUERY_DEVICE_INFO_RSP = 0x21
+        QUERY_DEVICE_DESCRIPTOR_CMD = 0x28
+        QUERY_DEVICE_DESCRIPTOR_RSP = 0x29
         EVENT_MESSAGE = 0x31
         ADD_DALI_FRAME_TO_TX_CMD = 0x32
         ADD_DALI_FRAME_TO_TX_RSP = 0x33
@@ -341,6 +343,26 @@ class DriverLubaRs232(DriverSerialBase):
 
         mode: int
         event_filter: int
+
+    class LubaDeviceDescriptor(NamedTuple):
+        """
+        Named tuple describing the functionality of the LUBA interface, as
+        returned by the "QUERY DEVICE DESCRIPTOR" command
+        """
+
+        # HardwareFeature bit 7: device has an integrated, switchable bus
+        # power supply
+        has_bus_power_supply: bool
+
+    class LubaLineStatus(NamedTuple):
+        """
+        Named tuple for the status of a DALI line, as returned by the
+        "READ STATUS" command
+        """
+
+        # Status bit 7: a bus voltage error is present (i.e. the bus is not
+        # powered)
+        bus_voltage_error: bool
 
     class LubaProtocol(asyncio.Protocol):
         """
@@ -392,6 +414,8 @@ class DriverLubaRs232(DriverSerialBase):
             self._connected = asyncio.Event()
             self._dev_info: Optional[DriverLubaRs232.LubaDeviceInfo] = None
             self._dev_inst_map: Optional[DeviceInstanceTypeMapper] = None
+            # Whether to switch on the interface's integrated bus power supply
+            self.bus_power = False
 
             self.reset()
 
@@ -580,6 +604,81 @@ class DriverLubaRs232(DriverSerialBase):
                 _LOG.error(f"Expected a LubaDeviceInfo, but got: {dev_info}")
                 return
 
+        async def send_device_descriptor_query(
+            self,
+        ) -> Optional[DriverLubaRs232.LubaDeviceDescriptor]:
+            """
+            Query the LUBA device descriptor, describing which features (such
+            as a switchable bus power supply) the interface supports
+            """
+            # Use a mutex to ensure only one message is sent at a time
+            async with self._tx_lock:
+                _LOG.debug("Querying LUBA device descriptor")
+                tx_ints = [
+                    0x59,  # ASCII 'Y'
+                    DriverLubaRs232.LubaCmd.QUERY_DEVICE_DESCRIPTOR_CMD.value,
+                    0,  # Length, this command carries no data
+                    None,  # Checksum
+                ]
+                self._insert_checksum(tx_ints)
+
+                _LOG.trace(
+                    f"LUBA frame to send: {[f'0x{data:02x}' for data in tx_ints]}"
+                )
+                self.transport.write(bytearray(tx_ints))
+
+                descriptor = await asyncio.wait_for(
+                    self._queue_rx_luba_cmd.get(),
+                    timeout=DriverLubaRs232.timeout_tx_confirm,
+                )
+            # Release transmit mutex
+
+            if not isinstance(
+                descriptor, DriverLubaRs232.LubaDeviceDescriptor
+            ):
+                _LOG.error(
+                    f"Expected a LubaDeviceDescriptor, but got: {descriptor}"
+                )
+                return None
+            return descriptor
+
+        async def send_read_status(
+            self,
+        ) -> Optional[DriverLubaRs232.LubaLineStatus]:
+            """
+            Read the status of the (single) DALI line, which reports whether
+            the bus is powered
+            """
+            # Use a mutex to ensure only one message is sent at a time
+            async with self._tx_lock:
+                _LOG.debug("Reading LUBA line status")
+                tx_ints = [
+                    0x59,  # ASCII 'Y'
+                    DriverLubaRs232.LubaCmd.READ_STATUS_CMD.value,
+                    1,  # Length
+                    0,  # Line 0 (devices with a single DALI line)
+                    None,  # Checksum
+                ]
+                self._insert_checksum(tx_ints)
+
+                _LOG.trace(
+                    f"LUBA frame to send: {[f'0x{data:02x}' for data in tx_ints]}"
+                )
+                self.transport.write(bytearray(tx_ints))
+
+                line_status = await asyncio.wait_for(
+                    self._queue_rx_luba_cmd.get(),
+                    timeout=DriverLubaRs232.timeout_tx_confirm,
+                )
+            # Release transmit mutex
+
+            if not isinstance(line_status, DriverLubaRs232.LubaLineStatus):
+                _LOG.error(
+                    f"Expected a LubaLineStatus, but got: {line_status}"
+                )
+                return None
+            return line_status
+
         async def send_device_settings(self) -> None:
             """
             The implementation of the LUBA protocol assumes a certain
@@ -603,7 +702,7 @@ class DriverLubaRs232(DriverSerialBase):
                 # 2: 1 = deactivates including the line number in events
                 # 1: 1 = Deactivates events for macros
                 # 0: reserved
-                hardware_settings = 0b00000000
+                hardware_settings = 0b10000000 if self.bus_power else 0b00000000
                 # 7: 1 = turn on bus power supply
                 # 6..0: Reserved
                 tx_ints = [
@@ -749,6 +848,15 @@ class DriverLubaRs232(DriverSerialBase):
                         rx_cmd == DriverLubaRs232.LubaCmd.QUERY_DEVICE_INFO_RSP
                     ):
                         self._process_luba_response_device_info(received_data)
+                    elif (
+                        rx_cmd
+                        == DriverLubaRs232.LubaCmd.QUERY_DEVICE_DESCRIPTOR_RSP
+                    ):
+                        self._process_luba_response_device_descriptor(
+                            received_data
+                        )
+                    elif rx_cmd == DriverLubaRs232.LubaCmd.READ_STATUS_RSP:
+                        self._process_luba_response_status(received_data)
                     elif (
                         rx_cmd
                         == DriverLubaRs232.LubaCmd.READ_WRITE_SETTINGS_RSP
@@ -967,6 +1075,63 @@ class DriverLubaRs232(DriverSerialBase):
             self._dev_info = info
             self._queue_rx_luba_cmd.put_nowait(info)
 
+        def _process_luba_response_device_descriptor(
+            self, received_data: tuple
+        ):
+            """
+            Handle a received "QUERY DEVICE DESCRIPTOR" response message
+            """
+            if (
+                DriverLubaRs232.LubaCmd(self._buffer[1])
+                != DriverLubaRs232.LubaCmd.QUERY_DEVICE_DESCRIPTOR_RSP
+            ):
+                raise ValueError(
+                    f"Wrong event type 0x{self._buffer[1]:02x}, expected 0x29"
+                )
+
+            payload_length = received_data[2]
+            # The DeviceDescriptor is 19 bytes, of which HardwareFeature is the
+            # last one. Only its bit 7 (switchable bus power supply) is used.
+            if payload_length < 19:
+                raise ValueError(
+                    f"Unexpected payload length {payload_length} for QUERY "
+                    "DEVICE DESCRIPTOR response"
+                )
+            hardware_feature = received_data[3 + 18]
+            descriptor = DriverLubaRs232.LubaDeviceDescriptor(
+                has_bus_power_supply=bool(hardware_feature & 0b10000000),
+            )
+            _LOG.info(f"Received device descriptor: {descriptor}")
+            self._queue_rx_luba_cmd.put_nowait(descriptor)
+
+        def _process_luba_response_status(self, received_data: tuple):
+            """
+            Handle a received "READ STATUS" response message
+            """
+            if (
+                DriverLubaRs232.LubaCmd(self._buffer[1])
+                != DriverLubaRs232.LubaCmd.READ_STATUS_RSP
+            ):
+                raise ValueError(
+                    f"Wrong event type 0x{self._buffer[1]:02x}, expected 0x2D"
+                )
+
+            payload_length = received_data[2]
+            # Payload layout: Line, Tick (2), ID, NrOfEntries, Status. The
+            # Status byte (payload index 5) is only present for an available
+            # DALI line; a length of 1 means the requested line does not exist.
+            if payload_length < 6:
+                raise ValueError(
+                    f"READ STATUS response without status byte (payload "
+                    f"length {payload_length})"
+                )
+            status = received_data[3 + 5]
+            line_status = DriverLubaRs232.LubaLineStatus(
+                bus_voltage_error=bool(status & 0b10000000),
+            )
+            _LOG.info(f"Received line status: {line_status}")
+            self._queue_rx_luba_cmd.put_nowait(line_status)
+
         def _process_luba_response_settings(self, received_data: tuple):
             """
             Handle a received "READ / WRITE SETTINGS" response message
@@ -1011,11 +1176,14 @@ class DriverLubaRs232(DriverSerialBase):
         self,
         uri: str | ParseResult,
         dev_inst_map: Optional[DeviceInstanceTypeMapper] = None,
+        bus_power: bool = False,
     ):
         super().__init__(uri=uri, dev_inst_map=dev_inst_map)
 
         self.serial_path = self.uri.path
         _LOG.info(f"Initialising luba232 driver for '{self.serial_path}'")
+        # Whether to switch on the interface's integrated bus power supply
+        self.bus_power = bus_power
         self._transport: Optional[serialx.SerialTransport] = None
         self._protocol: Optional[DriverLubaRs232.LubaProtocol] = None
 
@@ -1046,6 +1214,7 @@ class DriverLubaRs232(DriverSerialBase):
             raise
 
         await self._protocol.send_device_info_query()
+        self._protocol.bus_power = self.bus_power
         await self._protocol.send_device_settings()
         self._protocol.dev_inst_map = self.dev_inst_map
 
@@ -1060,6 +1229,20 @@ class DriverLubaRs232(DriverSerialBase):
                 f"Found {len(self.dev_inst_map.mapping)} enabled control "
                 "device instances"
             )
+
+    async def query_device_descriptor(
+        self,
+    ) -> Optional[DriverLubaRs232.LubaDeviceDescriptor]:
+        """Return the interface's device descriptor (feature flags)."""
+        if not self.is_connected:
+            raise IOError("DALI driver cannot query, not connected")
+        return await self._protocol.send_device_descriptor_query()
+
+    async def read_status(self) -> Optional[DriverLubaRs232.LubaLineStatus]:
+        """Return the status of the DALI line (e.g. bus power state)."""
+        if not self.is_connected:
+            raise IOError("DALI driver cannot query, not connected")
+        return await self._protocol.send_read_status()
 
     async def send(
         self, msg: command.Command, in_transaction: bool = False
