@@ -1318,7 +1318,10 @@ class DriverLubaRs232(DriverSerialBase):
             self._protocol.reset_dali_response()
             await self._protocol.send_dali_command(msg)
             if msg.is_query:
-                response = command.Response(None)
+                # Default to the command's own response type so that a query
+                # which times out is reported as a missing value; a bare
+                # Response(None) passes check_bad_rsp and leaks None to callers.
+                response = msg.response(None)
                 while True:
                     try:
                         raw_rsp = await asyncio.wait_for(
@@ -1909,7 +1912,10 @@ class DriverSCIRS232(DriverSerialBase):
             self._protocol.reset_dali_response()
             await self._protocol.send_dali_command(msg)
             if msg.is_query:
-                response = command.Response(None)
+                # Default to the command's own response type so that a query
+                # which times out is reported as a missing value; a bare
+                # Response(None) passes check_bad_rsp and leaks None to callers.
+                response = msg.response(None)
                 while True:
                     try:
                         raw_rsp = await asyncio.wait_for(
