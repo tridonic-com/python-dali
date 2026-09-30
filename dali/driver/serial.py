@@ -40,6 +40,16 @@ from dali.exceptions import TransmissionError
 _LOG = logging.getLogger("dali.driver")
 
 
+def _drain_queue(queue: asyncio.Queue) -> list:
+    """Remove and return every currently-queued item without blocking."""
+    items = []
+    while True:
+        try:
+            items.append(queue.get_nowait())
+        except asyncio.QueueEmpty:
+            return items
+
+
 class DistributorQueue(asyncio.Queue):
     def __init__(self, parent: Optional[DistributorQueue] = None, *, maxsize=0):
         """
@@ -488,20 +498,19 @@ class DriverLubaRs232(DriverSerialBase):
             return await self._queue_rx_raw_dali.get()
 
         def reset_dali_response(self) -> None:
+            """Drop any DALI responses left buffered from a previous exchange.
+
+            A backward frame that arrives after its query's receive timeout has
+            no matching request, so it is cleared before the next transaction.
+            On a busy bus this is routine housekeeping, hence debug level.
             """
-            Forces the queue of received DALI responses to be cleared, logging
-            any responses that are dropped if the queue is not empty
-            """
-            qlen = self._queue_rx_raw_dali.qsize()
-            if qlen:
-                _LOG.critical(
-                    f"LUBA RX DALI queue not empty! {qlen} items in queue!"
+            discarded = _drain_queue(self._queue_rx_raw_dali)
+            if discarded:
+                _LOG.debug(
+                    "LUBA RX DALI queue: discarded %d stale response(s): %s",
+                    len(discarded),
+                    discarded,
                 )
-                try:
-                    item = self._queue_rx_raw_dali.get_nowait()
-                    _LOG.critical(f"LUBA RX DALI queue discarding: {item}")
-                except asyncio.QueueEmpty:
-                    pass
 
         @staticmethod
         def _insert_checksum(in_ints: list[int]) -> None:
@@ -1516,34 +1525,28 @@ class DriverSCIRS232(DriverSerialBase):
             return await self._queue_rx_raw_dali.get()
 
         def reset_dali_response(self) -> None:
-            """
-            Forces the queue of received DALI responses to be cleared, logging
-            any responses that are dropped if the queue is not empty
-            """
+            """Drop any DALI frames left buffered from a previous exchange.
 
-            # remove backward frames
-            qlen = self._queue_rx_raw_dali.qsize()
-            if qlen:
-                _LOG.critical(
-                    f"SCI RS232 RX DALI queue not empty! {qlen} items in queue!"
+            Backward frames and information frames that arrive after their
+            query's receive timeout have no matching request, so they are
+            cleared before the next transaction. On a busy bus this is routine
+            housekeeping, hence debug level.
+            """
+            discarded = _drain_queue(self._queue_rx_raw_dali)
+            if discarded:
+                _LOG.debug(
+                    "SCI RS232 RX DALI queue: discarded %d stale response(s): %s",
+                    len(discarded),
+                    discarded,
                 )
-                try:
-                    item = self._queue_rx_raw_dali.get_nowait()
-                    _LOG.critical(f"SCI RS232 RX DALI queue discarding: {item}")
-                except asyncio.QueueEmpty:
-                    pass
 
-            # remove information frames (includes errors and sent confirmations)
-            qlen = self._queue_rx_info.qsize()
-            if qlen:
-                _LOG.critical(
-                    f"SCI RS232 RX info DALI queue not empty! {qlen} items in queue!"
+            discarded_info = _drain_queue(self._queue_rx_info)
+            if discarded_info:
+                _LOG.debug(
+                    "SCI RS232 RX info queue: discarded %d stale frame(s): %s",
+                    len(discarded_info),
+                    discarded_info,
                 )
-                try:
-                    item = self._queue_rx_raw_dali.get_nowait()
-                    _LOG.critical(f"SCI RS232 RX info DALI queue discarding: {item}")
-                except asyncio.QueueEmpty:
-                    pass
 
         @staticmethod
         def _insert_checksum(in_ints: list[int]) -> None:
