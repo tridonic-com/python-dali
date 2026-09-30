@@ -9,12 +9,15 @@ from dali import command
 from dali.address import GearAddress, GearShort
 from dali.gear.colour import (
     Activate,
+    QueryColourStatus,
+    QueryColourTypeFeatures,
     QueryColourValue,
     QueryColourValueDTR,
     SetTemporaryColourTemperature,
     StoreColourTemperatureTcLimit,
 )
 from dali.gear.general import DTR0, DTR1, DTR2, QueryActualLevel, QueryContentDTR0
+from dali.gear.led import QueryDimmingCurve
 
 
 def SetDT8ColourValueTc(
@@ -40,6 +43,66 @@ def SetDT8ColourValueTc(
     yield DTR1(tc_bytes[1])
     yield SetTemporaryColourTemperature(address)
     yield Activate(address)
+
+
+def QueryDT8ColourTypeFeatures(
+    address: GearShort,
+) -> Generator[command.Command, Optional[command.Response], Optional[command.Response]]:
+    """
+    A generator sequence to query the colour type features of a DT8 control
+    gear (62386-209, command 249). Running it as a sequence ensures the
+    required "ENABLE DEVICE TYPE 8" command is sent immediately beforehand, so
+    the gear answers the application extended command.
+
+    :param address: GearShort address to query
+    :return: The QueryColourTypeFeaturesResponse, or None if no answer
+    """
+    # Although the proper types are expected, ints are common enough for
+    # addresses and their meaning is unambiguous in this context
+    if isinstance(address, int):
+        address = GearShort(address)
+
+    return (yield QueryColourTypeFeatures(address))
+
+
+def QueryDT8ColourStatus(
+    address: GearShort,
+) -> Generator[command.Command, Optional[command.Response], Optional[command.Response]]:
+    """
+    A generator sequence to query the colour status of a DT8 control gear
+    (62386-209, command 248), which reports the currently active colour type.
+    Running it as a sequence ensures the required "ENABLE DEVICE TYPE 8"
+    command is sent immediately beforehand.
+
+    :param address: GearShort address to query
+    :return: The QueryColourStatusResponse, or None if no answer
+    """
+    # Although the proper types are expected, ints are common enough for
+    # addresses and their meaning is unambiguous in this context
+    if isinstance(address, int):
+        address = GearShort(address)
+
+    return (yield QueryColourStatus(address))
+
+
+def QueryDT6DimmingCurve(
+    address: GearShort,
+) -> Generator[command.Command, Optional[command.Response], Optional[command.Response]]:
+    """
+    A generator sequence to query the dimming curve of a DT6 (LED) control
+    gear (62386-207, command 238). Running it as a sequence ensures the
+    required "ENABLE DEVICE TYPE 6" command is sent immediately beforehand, so
+    the gear answers the application extended command.
+
+    :param address: GearShort address to query
+    :return: The QueryDimmingCurveResponse, or None if no answer
+    """
+    # Although the proper types are expected, ints are common enough for
+    # addresses and their meaning is unambiguous in this context
+    if isinstance(address, int):
+        address = GearShort(address)
+
+    return (yield QueryDimmingCurve(address))
 
 
 def QueryDT8ColourValue(
