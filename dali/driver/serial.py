@@ -304,6 +304,9 @@ class DriverLubaRs232(DriverSerialBase):
     timeout_connect = 1.0
     timeout_bus_power = 5.0  # Time for the integrated PS to bring the bus up
 
+    # Lunatone article numbers this driver has been tested against.
+    TESTED_ARTICLE_NUMBERS = frozenset({24166096, 24138246})
+
     class LubaCmd(Enum):
         """
         All supported LUBA command codes. Refer §2 of Lunatone's
@@ -1100,10 +1103,13 @@ class DriverLubaRs232(DriverSerialBase):
                 ),
             )
             _LOG.info(f"Received device info: {info}")
-            if info.article_num != 24166096:
+            if info.article_num not in DriverLubaRs232.TESTED_ARTICLE_NUMBERS:
+                tested = ", ".join(
+                    str(num) for num in sorted(DriverLubaRs232.TESTED_ARTICLE_NUMBERS)
+                )
                 _LOG.warning(
                     "DriverLubaRs232 has only been tested with Lunatone article "
-                    f"nr. 24166096, not nr. {info.article_num}"
+                    f"nr. {tested}, not nr. {info.article_num}"
                 )
             self._dev_info = info
             self._queue_rx_luba_cmd.put_nowait(info)
