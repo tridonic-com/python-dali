@@ -582,7 +582,7 @@ class DriverLubaRs232(DriverSerialBase):
                                 f"for '{confirm.message}'"
                             )
                     else:
-                        _LOG.warning(
+                        _LOG.debug(
                             f"Unable to decode message id {confirm.tx_id}, but "
                             "LUBA device reports it was sent successfully"
                         )
