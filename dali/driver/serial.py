@@ -35,6 +35,7 @@ import dali.gear
 from dali import command, frame, gear, sequences
 from dali.driver import trace_logging  # noqa: F401
 from dali.device.helpers import DeviceInstanceTypeMapper
+from dali.exceptions import TransmissionError
 
 _LOG = logging.getLogger("dali.driver")
 
@@ -326,6 +327,21 @@ class DriverLubaRs232(DriverSerialBase):
         ADD_24DALI_FRAME_TO_TX_CMD = 0x36
         ADD_24DALI_FRAME_TO_TX_RSP = 0x37
 
+    class LubaTxError(Enum):
+        """Reason codes reported when the interface rejects a DALI frame.
+
+        Refer §2.1.1 "ADD DALI FRAME TO TX BUFFER" of Lunatone's LUBA
+        documentation.
+        """
+
+        BUS_VOLTAGE_ERROR = 1
+        DALI_INITIALIZE_MODE = 2
+        DALI_QUIESCENT_MODE = 3
+        SEND_BUFFER_FULL = 4
+        LINE_NOT_AVAILABLE = 5
+        SYNTAX_ERROR = 6
+        MACRO_RUNNING = 7
+
     class LubaDeviceInfo(NamedTuple):
         """
         Named tuple for storing a set of information about the LUBA device
@@ -395,6 +411,7 @@ class DriverLubaRs232(DriverSerialBase):
 
             tx_id: int
             message: Optional[command.Command] = None
+            error_code: Optional[int] = None
 
         def __init__(self) -> None:
             super().__init__()
@@ -550,6 +567,8 @@ class DriverLubaRs232(DriverSerialBase):
                         self._queue_tx_conf.get(),
                         timeout=DriverLubaRs232.timeout_tx_confirm,
                     )
+                    if confirm.error_code is not None:
+                        raise TransmissionError(confirm.error_code)
                     if hasattr(confirm.message, "frame"):
                         if confirm.message.frame == tx.frame:
                             _LOG.trace(
@@ -916,7 +935,13 @@ class DriverLubaRs232(DriverSerialBase):
                         devicetype=self._prev_tx_enable_dt,
                         dev_inst_map=self._dev_inst_map,
                     )
-                except:
+                except Exception:
+                    _LOG.debug(
+                        "Failed to decode transmitted DALI frame "
+                        f"{[f'0x{b:02x}' for b in tx_dali]} "
+                        f"(devicetype {self._prev_tx_enable_dt})",
+                        exc_info=True,
+                    )
                     dali_command = None
                 # Store the last seen Device Type command, there will likely
                 # be a subsequent command that we transmit which relies on
@@ -1012,6 +1037,13 @@ class DriverLubaRs232(DriverSerialBase):
                 error_code = received_data[3]
                 _LOG.error(
                     f"LUBA device reports error in transmission: {error_code}"
+                )
+                # No DALI frame reaches the bus, so the "frame sent" event that
+                # normally confirms a transmission will never arrive. Surface
+                # the error to the waiting 'send_dali_command' so it fails fast
+                # instead of blocking until the confirmation timeout.
+                self._queue_tx_conf.put_nowait(
+                    self.LubaMsgTxConf(tx_id=-1, error_code=error_code)
                 )
             elif payload_length == 2:
                 tx_id = received_data[3]
