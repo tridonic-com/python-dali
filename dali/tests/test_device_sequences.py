@@ -13,6 +13,7 @@ from dali.device.general import (
     QueryEventSchemeResponse,
     QueryInputValue,
     QueryInputValueLatch,
+    QueryNumberOfInstances,
     QueryResolution,
     SetEventFilter,
 )
@@ -160,6 +161,32 @@ def test_device_autodiscover_absent_address_probed_once(fakes_bus):
     assert probes.count(3) == 1
     assert probes.count(4) == 1
     assert probes.count(5) == 1
+
+
+def test_device_autodiscover_caps_instance_count(fakes_bus):
+    """A device reporting more than 32 instances does not abort the scan.
+
+    Instance numbers are 0..31, so a count above 32 (a non-conformant device,
+    or a value whose backward frame collided with an event) must not build an
+    out-of-range InstanceNumber and crash the whole scan; the count is capped
+    and the device's real instances are still enumerated.
+    """
+    dev_inst_map = DeviceInstanceTypeMapper()
+    real_send = fakes_bus.send
+
+    def send_with_bad_count(cmd):
+        if isinstance(cmd, QueryNumberOfInstances) and (
+            getattr(cmd.destination, "address", None) == 0
+        ):
+            return NumericResponse(BackwardFrame(255))
+        return real_send(cmd)
+
+    fakes_bus.send = send_with_bad_count
+    fakes_bus.run_sequence(dev_inst_map.autodiscover())
+
+    # Device 0's four real instances are still found despite the bogus count.
+    assert sum(1 for addr, _instance in dev_inst_map.mapping if addr == 0) == 4
+    assert len(dev_inst_map.mapping) == 12
 
 
 def test_device_query_event_scheme(fakes_bus):

@@ -162,7 +162,13 @@ class DeviceInstanceTypeMapper:
             rsp = yield QueryNumberOfInstances(device=addr)
             if check_bad_rsp(rsp):
                 continue
-            num_inst = rsp.value
+            # Instance numbers are 0..31 (IEC 62386-103), so a device can have
+            # at most 32 instances. Cap the count defensively: a device
+            # reporting more, or a value corrupted by a colliding event frame,
+            # would otherwise build an out-of-range InstanceNumber and abort the
+            # whole scan. Non-existent instances are skipped when they do not
+            # respond to QueryInstanceEnabled below.
+            num_inst = min(rsp.value, 32)
 
             # For each instance, check it is enabled and then query the type
             for inst_int in range(num_inst):
