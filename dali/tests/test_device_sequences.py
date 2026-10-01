@@ -110,6 +110,57 @@ def test_device_autodiscover_skip_no_instances(fakes_bus):
     assert len(dev_inst_map.mapping) == 12
 
 
+def test_device_autodiscover_retries_collided_status(fakes_bus):
+    """A status probe that collides with an event is retried, not skipped.
+
+    A spontaneous event from a device can corrupt the backward frame of the
+    first status probe; without a retry the whole device (and all its
+    instances) would be silently dropped from the scan.
+    """
+    dev_inst_map = DeviceInstanceTypeMapper()
+    real_send = fakes_bus.send
+    collided = {"done": False}
+
+    def send_with_one_collision(cmd):
+        if (
+            not collided["done"]
+            and isinstance(cmd, QueryDeviceStatus)
+            and getattr(cmd.destination, "address", None) == 0
+        ):
+            collided["done"] = True
+            return QueryDeviceStatusResponse(BackwardFrameError(0xFF))
+        return real_send(cmd)
+
+    fakes_bus.send = send_with_one_collision
+    fakes_bus.run_sequence(dev_inst_map.autodiscover())
+
+    assert collided["done"]
+    assert any(addr == 0 for addr, _instance in dev_inst_map.mapping)
+    assert len(dev_inst_map.mapping) == 12
+
+
+def test_device_autodiscover_absent_address_probed_once(fakes_bus):
+    """An empty address returns a missing (not collided) status, so it is not
+    retried; only a framing-error reply triggers the extra probes."""
+    probes: list[int] = []
+    real_send = fakes_bus.send
+
+    def counting_send(cmd):
+        if isinstance(cmd, QueryDeviceStatus):
+            probes.append(getattr(cmd.destination, "address", None))
+        return real_send(cmd)
+
+    fakes_bus.send = counting_send
+    fakes_bus.run_sequence(
+        DeviceInstanceTypeMapper().autodiscover(addresses=(0, 5))
+    )
+
+    # Addresses 3-5 have no device, so each is probed exactly once.
+    assert probes.count(3) == 1
+    assert probes.count(4) == 1
+    assert probes.count(5) == 1
+
+
 def test_device_query_event_scheme(fakes_bus):
     rsp = fakes_bus.send(QueryEventScheme(DeviceShort(1), InstanceNumber(1)))
     assert isinstance(rsp, QueryEventSchemeResponse)

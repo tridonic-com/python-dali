@@ -19,7 +19,7 @@ from dali.device.general import (
 )
 from dali.exceptions import MissingResponse, ResponseError
 from dali.frame import BackwardFrameError
-from dali.sequences import progress as seq_progress
+from dali.sequences import progress as seq_progress, sleep
 
 
 def check_bad_rsp(r: Response | None) -> bool:
@@ -85,7 +85,10 @@ class DeviceInstanceTypeMapper:
         return self._mapping
 
     def autodiscover(
-        self, addresses: int | tuple[int, int] | Iterable[int] = (0, 63)
+        self,
+        addresses: int | tuple[int, int] | Iterable[int] = (0, 63),
+        quiescent_settle: float = 0.2,
+        status_attempts: int = 3,
     ) -> Generator[Command, Response, None]:
         """
         A generator sequence to scan a DALI bus for control device instances,
@@ -99,6 +102,11 @@ class DeviceInstanceTypeMapper:
         which case all addresses between the provided values will be scanned;
         or finally can be an iterable of ints in which case each address, in
         the iterator will be scanned.
+        :param quiescent_settle: Seconds to wait after entering quiescent mode
+        before probing, so an event frame already in flight does not corrupt
+        the first address probe.
+        :param status_attempts: How many times to probe an address whose status
+        reply collides with a spontaneous event before treating it as empty.
         :return: A generator function, to use with e.g. `driver.run_sequence()`
 
         Needs to be used through an appropriate driver, with `run_sequence()`,
@@ -111,6 +119,12 @@ class DeviceInstanceTypeMapper:
 
         # Use quiescent mode to reduce bus contention from input devices
         yield StartQuiescentMode(DeviceBroadcast())
+        # Quiescent mode is not instant and an input device may already have an
+        # event frame in flight. Let the bus settle so the first probe is not
+        # corrupted by a colliding backward frame, which would otherwise make a
+        # present device look absent.
+        if quiescent_settle:
+            yield sleep(quiescent_settle)
 
         if isinstance(addresses, int):
             addresses = (n for n in range(0, addresses))
@@ -120,8 +134,16 @@ class DeviceInstanceTypeMapper:
         for addr_int in addresses:
             addr = DeviceShort(addr_int)
 
-            # Check that the device exists and responds
-            rsp = yield QueryDeviceStatus(device=addr)
+            # Check that the device exists and responds. A framing error means a
+            # device answered but its backward frame collided with a spontaneous
+            # event, so retry; a missing response means the address is empty, so
+            # stop probing it immediately.
+            for _attempt in range(status_attempts):
+                rsp = yield QueryDeviceStatus(device=addr)
+                if not check_bad_rsp(rsp):
+                    break
+                if not isinstance(getattr(rsp, "raw_value", None), BackwardFrameError):
+                    break
             if check_bad_rsp(rsp):
                 continue
             if isinstance(rsp, QueryDeviceStatusResponse):
