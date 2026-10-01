@@ -119,6 +119,10 @@ class UnitOfMeasurement(IntEnum):
     PART_PER_THOUSAND = 51
     PART_PER_TEN_THOUSAND = 52
     PARTS_PER_MILLION = 53
+    # Values below are not defined by Part 306 Annex A, Table A.1 (which ends
+    # at 53). They are vendor extensions observed on real hardware.
+    DECIBEL_A = 55  # dB(A), A-weighted sound pressure level
+    PROBABILITY = 56
 
 
 class QuantityName(IntEnum):
