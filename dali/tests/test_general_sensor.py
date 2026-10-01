@@ -41,13 +41,13 @@ def test_part_306_constants() -> None:
     """Test normative quantity and unit constants."""
     assert general_sensor.instance_type == 6
     assert MeasurementVariable.QUANTITY_NAME == 0x1E
-    assert QuantityName.TEMPERATURE == 27
-    assert QuantityName.RELATIVE_HUMIDITY == 30
-    assert QuantityName.PRESSURE == 32
-    assert QuantityName.CO2 == 35
-    assert QuantityName.VOC == 37
-    assert QuantityName.AIR_QUALITY_INDEX == 43
+    assert QuantityName.TEMPERATURE == 26
+    assert QuantityName.RELATIVE_HUMIDITY == 29
+    assert QuantityName.PRESSURE == 31
+    assert QuantityName.CO2 == 34
+    assert QuantityName.VOC == 36
+    assert QuantityName.AIR_QUALITY_INDEX == 46
     assert UnitOfMeasurement.CELSIUS == 9
     assert UnitOfMeasurement.PASCAL == 16
-    assert UnitOfMeasurement.PERCENT == 56
-    assert UnitOfMeasurement.PARTS_PER_MILLION == 59
+    assert UnitOfMeasurement.PERCENT == 50
+    assert UnitOfMeasurement.PARTS_PER_MILLION == 53

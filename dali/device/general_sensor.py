@@ -10,7 +10,11 @@ instance_type = 6
 
 
 class MeasurementVariable(IntEnum):
-    """DTR0 values for QUERY MEASUREMENT VARIABLE, from Part 306 Table 17."""
+    """DTR0 values for QUERY MEASUREMENT VARIABLE, from Part 306 Table 17.
+
+    Note: each QUERY MEASUREMENT VARIABLE execution auto-increments DTR0 by 1,
+    so DTR0 must be set again before every single-byte read.
+    """
 
     ALARM_IS_ACTIVATED = 0x00
     ALARM_TYPE = 0x01
@@ -48,18 +52,18 @@ class MeasurementVariable(IntEnum):
     MAGNITUDE = 0x21
     MAGNITUDE_PHYSICAL_MAX = 0x22
     MAGNITUDE_PHYSICAL_MIN = 0x23
-    MAX_INPUT_VALUE_BYTE_0 = 0x24
-    MAX_INPUT_VALUE_BYTE_1 = 0x25
-    MAX_INPUT_VALUE_BYTE_2 = 0x26
-    MAX_INPUT_VALUE_BYTE_3 = 0x27
-    MIN_INPUT_VALUE_BYTE_0 = 0x28
-    MIN_INPUT_VALUE_BYTE_1 = 0x29
-    MIN_INPUT_VALUE_BYTE_2 = 0x2A
-    MIN_INPUT_VALUE_BYTE_3 = 0x2B
+    MAX_MEASURED_VALUE_BYTE_0 = 0x24
+    MAX_MEASURED_VALUE_BYTE_1 = 0x25
+    MAX_MEASURED_VALUE_BYTE_2 = 0x26
+    MAX_MEASURED_VALUE_BYTE_3 = 0x27
+    MIN_MEASURED_VALUE_BYTE_0 = 0x28
+    MIN_MEASURED_VALUE_BYTE_1 = 0x29
+    MIN_MEASURED_VALUE_BYTE_2 = 0x2A
+    MIN_MEASURED_VALUE_BYTE_3 = 0x2B
 
 
 class UnitOfMeasurement(IntEnum):
-    """Standard unit-of-measurement values from Part 306 Annex A, Table 18."""
+    """Standard unit-of-measurement values from Part 306 Annex A, Table A.1."""
 
     MANUFACTURER_DEFINED = 0
     DIMENSIONLESS = 1
@@ -73,7 +77,8 @@ class UnitOfMeasurement(IntEnum):
     CELSIUS = 9
     FAHRENHEIT = 10
     MOLE = 11
-    RAD = 13
+    DEGREE_ANGLE = 12
+    RADIAN = 13
     STERADIAN = 14
     NEWTON = 15
     PASCAL = 16
@@ -88,47 +93,50 @@ class UnitOfMeasurement(IntEnum):
     TESLA = 25
     HENRY = 26
     AMPERE_PER_METRE = 27
-    VOLTS_PER_METRE = 28
+    VOLT_PER_METRE = 28
+    AMPERE_HOUR = 29
+    WATT_HOUR = 30
     LUMEN = 31
     LUX = 32
     CANDELA = 33
     CANDELA_PER_SQUARE_METRE = 34
-    BECQUEREL = 36
-    GRAY = 37
-    SIEVERT = 38
-    KATAL = 39
-    SQUARE_METRE = 41
-    CUBIC_METRE = 42
-    METRE_PER_SECOND = 43
-    METRE_PER_SECOND_SQUARED = 44
-    CUBIC_METRE_PER_SECOND = 45
-    KILOGRAM_PER_CUBIC_METRE = 46
-    KILOGRAM_PER_SQUARE_METRE = 47
-    CUBIC_METRE_PER_KILOGRAM = 48
-    FEET = 49
-    NEWTON_METRE = 51
-    POSITION_COORDINATE = 53
-    DECIBEL = 55
-    PERCENT = 56
-    PART_PER_THOUSAND = 57
-    PART_PER_TEN_THOUSAND = 58
-    PARTS_PER_MILLION = 59
+    BECQUEREL = 35
+    GRAY = 36
+    SIEVERT = 37
+    KATAL = 38
+    SQUARE_METRE = 39
+    CUBIC_METRE = 40
+    METRE_PER_SECOND = 41
+    METRE_PER_SECOND_SQUARED = 42
+    CUBIC_METRE_PER_SECOND = 43
+    KILOGRAM_PER_CUBIC_METRE = 44
+    KILOGRAM_PER_SQUARE_METRE = 45
+    CUBIC_METRE_PER_KILOGRAM = 46
+    FOOT = 47
+    NEWTON_METRE = 48
+    DECIBEL = 49
+    PERCENT = 50
+    PART_PER_THOUSAND = 51
+    PART_PER_TEN_THOUSAND = 52
+    PARTS_PER_MILLION = 53
 
 
 class QuantityName(IntEnum):
-    """Standard quantity-name values from Part 306 Annex A, Table 19."""
+    """Standard quantity-name values from Part 306 Annex A, Table A.2."""
 
     MANUFACTURER_DEFINED = 0
     TIME = 1
     FREQUENCY = 2
-    LENGTH = 4
-    FORCE = 5
-    WEIGHT = 6
-    MASS = 7
-    VELOCITY = 8
-    AREA = 9
-    VOLUME = 10
-    TORQUE = 11
+    LENGTH = 3
+    FORCE = 4
+    WEIGHT = 5
+    MASS = 6
+    VELOCITY = 7
+    ACCELERATION = 8
+    ANGLE = 9
+    AREA = 10
+    VOLUME = 11
+    TORQUE = 12
     VOLTAGE = 13
     CURRENT = 14
     POWER = 15
@@ -137,32 +145,44 @@ class QuantityName(IntEnum):
     ENERGY = 18
     POWER_FACTOR = 19
     SOUND_PRESSURE_LEVEL = 20
-    CCT = 22
-    CRI = 23
-    RED_LIGHT = 24
-    GREEN_LIGHT = 25
-    BLUE_LIGHT = 26
-    TEMPERATURE = 27
-    WET_BULB_TEMPERATURE = 28
-    ABSOLUTE_HUMIDITY = 29
-    RELATIVE_HUMIDITY = 30
-    DEW_POINT = 31
-    PRESSURE = 32
-    FLOW_RATE = 33
-    CO2 = 35
-    CO = 36
-    VOC = 37
-    NO2 = 38
+    CCT = 21
+    CRI = 22
+    RED_LIGHT = 23
+    GREEN_LIGHT = 24
+    BLUE_LIGHT = 25
+    TEMPERATURE = 26
+    WET_BULB_TEMPERATURE = 27
+    ABSOLUTE_HUMIDITY = 28
+    RELATIVE_HUMIDITY = 29
+    DEW_POINT = 30
+    PRESSURE = 31
+    FLOW_RATE = 32
+    SO2 = 33
+    CO2 = 34
+    CO = 35
+    VOC = 36
+    NOX = 37
+    N2O = 38
     AMMONIA = 39
-    PARTICULATE_MATTER_PM10 = 41
-    PARTICULATE_MATTER_PM2_5 = 42
-    AIR_QUALITY_INDEX = 43
-    RSSI_IBEACON = 44
-    RSSI_EDDYSTONE = 45
-    RSSI_ALTBEACON = 46
-    GLOBAL_POSITION = 47
-    RELATIVE_POSITION = 48
-    ALTITUDE = 49
+    OZONE = 40
+    CHLORINE = 41
+    METHANE = 42
+    ACIDITY = 43
+    PARTICULATE_MATTER_PM10 = 44
+    PARTICULATE_MATTER_PM2_5 = 45
+    AIR_QUALITY_INDEX = 46
+    RSSI_IBEACON = 47
+    RSSI_EDDYSTONE = 48
+    RSSI_ALTBEACON = 49
+    GLOBAL_POSITION_LONGITUDE = 50
+    GLOBAL_POSITION_LATITUDE = 51
+    ALTITUDE = 52
+    RELATIVE_POSITION_X = 53
+    RELATIVE_POSITION_Y = 54
+    RELATIVE_POSITION_Z = 55
+    WIND_SPEED = 56
+    FLUID_LEVEL = 57
+    BATTERY_CHARGE = 58
 
 
 class GeneralSensorEvent(general._Event):
