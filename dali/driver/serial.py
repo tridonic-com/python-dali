@@ -313,6 +313,10 @@ class DriverLubaRs232(DriverSerialBase):
     timeout_tx_confirm = 1.0  # TX might take some time if the bus is busy
     timeout_connect = 1.0
     timeout_bus_power = 5.0  # Time for the integrated PS to bring the bus up
+    # The interface can be slow to acknowledge the initial handshake while the
+    # bus is busy (e.g. an input device streaming events), so retry it a few
+    # times rather than failing the whole connect on a single timeout.
+    handshake_attempts = 5
 
     # Lunatone article numbers this driver has been tested against.
     TESTED_ARTICLE_NUMBERS = frozenset({24166096, 24138246})
@@ -511,6 +515,15 @@ class DriverLubaRs232(DriverSerialBase):
                     len(discarded),
                     discarded,
                 )
+
+        def reset_luba_response(self) -> None:
+            """Drop any LUBA command replies left buffered from a prior attempt.
+
+            A reply that arrives after its command's confirm timeout would
+            otherwise be mistaken for the next command's reply, so it is cleared
+            before a handshake is retried.
+            """
+            _drain_queue(self._queue_rx_luba_cmd)
 
         @staticmethod
         def _insert_checksum(in_ints: list[int]) -> None:
@@ -1261,9 +1274,23 @@ class DriverLubaRs232(DriverSerialBase):
             _LOG.critical(f"Timeout waiting for driver to connect: {exc}")
             raise
 
-        await self._protocol.send_device_info_query()
-        self._protocol.bus_power = self.bus_power
-        await self._protocol.send_device_settings()
+        for attempt in range(1, DriverLubaRs232.handshake_attempts + 1):
+            try:
+                await self._protocol.send_device_info_query()
+                self._protocol.bus_power = self.bus_power
+                await self._protocol.send_device_settings()
+                break
+            except (asyncio.TimeoutError, TimeoutError):
+                if attempt >= DriverLubaRs232.handshake_attempts:
+                    _LOG.error(
+                        "LUBA handshake timed out after %d attempts",
+                        DriverLubaRs232.handshake_attempts,
+                    )
+                    raise
+                _LOG.warning(
+                    "LUBA handshake attempt %d timed out, retrying", attempt
+                )
+                self._protocol.reset_luba_response()
         self._protocol.dev_inst_map = self.dev_inst_map
 
         self._connected.set()
