@@ -34,7 +34,7 @@ from dali.gear.led import QueryDimmingCurve
 
 
 def SetDT8ColourValueTc(
-    address: GearAddress,
+    address: GearAddress | int,
     tc_mired: int,
 ) -> Generator[command.Command, Optional[command.Response], None]:
     """
@@ -265,7 +265,7 @@ def QueryEmergencyInformation(
 
 
 def EmergencyCommand(
-    address: GearShort,
+    address: GearShort | int,
     command_class: type[command.Command],
 ) -> Generator[command.Command, Optional[command.Response], Optional[command.Response]]:
     """Issue a single DT1 (IEC 62386-202) application-extended command.
