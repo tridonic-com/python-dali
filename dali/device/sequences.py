@@ -47,7 +47,7 @@ def SetEventSchemes(
 
     Example:
     ```
-    await driver.run_sequence(
+    await driver.send(
         SetEventSchemes(
             device=address.DeviceShort(1),
             instance=address.InstanceNumber(2),
@@ -99,7 +99,7 @@ def SetEventFilters(
     from dali import address
     from dali.device.pushbutton import InstanceEventFilter as filter_pb
 
-    await driver.run_sequence(
+    await driver.send(
         SetEventFilters(
             device=address.DeviceShort(1),
             instance=address.InstanceNumber(2),
@@ -189,7 +189,7 @@ def QueryEventFilters(
     from dali import address
     from dali.device import pushbutton
 
-    await driver.run_sequence(
+    await driver.send(
         QueryEventFilters(
             device=address.DeviceShort(1),
             instance=address.InstanceNumber(2),
