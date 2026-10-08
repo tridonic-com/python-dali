@@ -225,7 +225,11 @@ class InstanceEventFilter(general.InstanceEventFilter):
 
 
 class QueryMeasurementVariable(general._StandardInstanceCommand):
-    """Query a Part 306 measurement variable selected by DTR0."""
+    """Query a Part 306 measurement variable selected by DTR0.
+
+    Executing this command auto-increments DTR0 by 1, so DTR0 must be set
+    again before every single-byte read. See MeasurementVariable.
+    """
 
     inputdev = True
     uses_dtr0 = True
