@@ -106,6 +106,48 @@ async def test_connect_raises_after_exhausting_handshake_attempts(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_lost_transport_is_reported_as_disconnected(monkeypatch):
+    """An interface that goes away must stop claiming to be connected.
+
+    The driver's own event only records that the handshake once succeeded, so
+    an unplugged USB interface still looked connected and every frame ran into
+    its transmit timeout instead of failing fast.
+    """
+    driver, protocol = _connecting_driver(monkeypatch, [None])
+    await driver.connect()
+    assert driver.is_connected
+
+    # What LubaProtocol.connection_lost() does when the port disappears
+    protocol.connected.clear()
+
+    assert not driver.is_connected
+
+
+@pytest.mark.asyncio
+async def test_connect_reopens_the_port_after_a_lost_transport(monkeypatch):
+    """Once the interface is back, connect() must open the port again."""
+    driver, protocol = _connecting_driver(monkeypatch, [None])
+    await driver.connect()
+    protocol.connected.clear()
+
+    replacement = MagicMock()
+    connected = asyncio.Event()
+    connected.set()
+    replacement.connected = connected
+    replacement.send_device_info_query = AsyncMock()
+    replacement.send_device_settings = AsyncMock()
+    monkeypatch.setattr(
+        "dali.driver.serial.serialx.create_serial_connection",
+        AsyncMock(return_value=(MagicMock(), replacement)),
+    )
+
+    await driver.connect()
+
+    assert driver.is_connected
+    assert driver._protocol is replacement
+
+
+@pytest.mark.asyncio
 async def test_reset_luba_response_drains_all(caplog):
     """Stale LUBA command replies must be cleared before a handshake retry."""
     protocol = DriverLubaRs232.LubaProtocol()

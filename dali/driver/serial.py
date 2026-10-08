@@ -166,6 +166,8 @@ class DriverSerialBase:
         if dev_inst_map is None:
             self.dev_inst_map = DeviceInstanceTypeMapper()
         self._connected = asyncio.Event()
+        # Assigned by the subclass once the asyncio transport protocol exists
+        self._protocol: Any = None
         self.transaction_lock = asyncio.Lock()
 
     def __repr__(self):
@@ -192,9 +194,19 @@ class DriverSerialBase:
         """
         Flags whether the underlying transport is connected and ready for use
 
+        The serial device can disappear at any time, e.g. a USB interface
+        being unplugged. The driver's own event only records that the
+        handshake completed once, so for drivers backed by an asyncio
+        transport the protocol, which is told about the loss through
+        'connection_lost()', has the last word.
+
         :return: Boolean, true if connection is ready
         """
-        return self._connected.is_set()
+        if not self._connected.is_set():
+            return False
+        if self._protocol is None:
+            return True
+        return self._protocol.connected.is_set()
 
     async def wait_connected(self) -> None:
         """
