@@ -376,7 +376,10 @@ def drivers_map() -> dict[str, type[DriverSerialBase]]:
 
 class DriverLubaRs232(DriverSerialBase):
     uri_scheme = "luba232"
-    timeout_rx = 0.025
+    # DO NOT COMMIT: experimental RX timeout bump (was 0.025) to reduce late
+    # backward frames orphaned in the RX queue. Raise further if the "stale
+    # RX DALI response" debug messages keep reappearing.
+    timeout_rx = 0.035
     timeout_tx_confirm = 1.0  # TX might take some time if the bus is busy
     timeout_connect = 1.0
     timeout_bus_power = 5.0  # Time for the integrated PS to bring the bus up
@@ -653,18 +656,30 @@ class DriverLubaRs232(DriverSerialBase):
                     )
                     if confirm.error_code is not None:
                         raise TransmissionError(confirm.error_code)
+                    if (
+                        hasattr(confirm.message, "frame")
+                        and confirm.message.frame != tx.frame
+                    ):
+                        # A confirmation for a different frame can only be a
+                        # stale one for an earlier send whose confirmation
+                        # arrived after it had already timed out: sends are
+                        # serialised under '_tx_lock', so nothing later is in
+                        # flight yet. Drop it and keep waiting for this frame's
+                        # own confirmation, otherwise every subsequent send
+                        # inherits the one-off mismatch and the stream never
+                        # resynchronises.
+                        _LOG.warning(
+                            "Discarding stale LUBA confirmation for '%s' "
+                            "while awaiting '%s'",
+                            confirm.message,
+                            tx,
+                        )
+                        continue
                     if hasattr(confirm.message, "frame"):
-                        if confirm.message.frame == tx.frame:
-                            _LOG.trace(
-                                f"LUBA device reports message '{tx}' sent, "
-                                f"with ID {confirm.tx_id}"
-                            )
-                        else:
-                            _LOG.error(
-                                "Expected LUBA device to confirm transmission "
-                                f"of message '{tx}', but got a confirmation "
-                                f"for '{confirm.message}'"
-                            )
+                        _LOG.trace(
+                            f"LUBA device reports message '{tx}' sent, "
+                            f"with ID {confirm.tx_id}"
+                        )
                     else:
                         _LOG.debug(
                             f"Unable to decode message id {confirm.tx_id}, but "
